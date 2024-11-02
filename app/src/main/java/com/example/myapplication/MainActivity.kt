@@ -1,25 +1,29 @@
 package com.example.myapplication
-import com.example.myapplication.R
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.graphics.ImageFormat
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import android.util.Log
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
-import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.data.LineData
-import android.Manifest
-import android.content.pm.PackageManager
-import android.widget.Toast
-import androidx.core.app.ActivityCompat
-import android.graphics.ImageFormat
+import com.github.mikephil.charting.data.LineDataSet
+import java.util.concurrent.Executors
 
 
 
@@ -27,28 +31,50 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var lineChart: LineChart
+    private lateinit var pcgChart: LineChart
     private val chartEntries = ArrayList<Entry>()
+    private val pcgEntries = ArrayList<Entry>()
     private var timeIndex = 0f
+    private var pcgTimeIndex = 0f
 
-    private val CAMERA_PERMISSION_CODE = 100 // Konštanta pre identifikáciu žiadosti o povolenie kamery
+    private val CAMERA_PERMISSION_CODE = 100
+    private val AUDIO_PERMISSION_CODE = 101
+    private val sampleRate = 44100
+    private val bufferSize = AudioRecord.getMinBufferSize(
+        sampleRate,
+        AudioFormat.CHANNEL_IN_MONO,
+        AudioFormat.ENCODING_PCM_16BIT
+    )
+    private lateinit var audioRecord: AudioRecord
+    companion object {
+        private const val REQUEST_CODE_PERMISSIONS = 10
+    }
+    private fun setupChart(chart: LineChart) {
+        chart.axisRight.isEnabled = false
+        chart.axisLeft.axisMinimum = 0f
+        chart.axisLeft.axisMaximum = 255f
+        chart.xAxis.position = XAxis.XAxisPosition.BOTTOM
+        chart.xAxis.setDrawGridLines(false)
+        chart.description.isEnabled = false
+        chart.legend.isEnabled = false
+    }
 
+    // Call setupChart with each LineChart instance
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
-        // Inicializujte PreviewView a LineChart
         previewView = findViewById(R.id.previewView)
         lineChart = findViewById(R.id.lineChart)
+        pcgChart = findViewById(R.id.pcgChart)
 
-        setupChart()
+        setupChart(lineChart)
+        setupChart(pcgChart)
 
-        // Skontrolujte, či má aplikácia povolenie pre kameru
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            startCamera() // Spustí kameru, ak už povolenie existuje
-        } else {
-            // Ak povolenie nie je udelené, požiadajte o povolenie pre kameru
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_CODE)
+        if (checkAndRequestPermissions()) {
+            startCamera()
+            startAudioRecording()
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main)) { v, insets ->
@@ -61,25 +87,17 @@ class MainActivity : AppCompatActivity() {
     // Metóda pre spracovanie výsledkov žiadosti o povolenie
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_PERMISSION_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startCamera() // Spustí kameru po udelení povolenia
+        if (requestCode == REQUEST_CODE_PERMISSIONS) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                // All permissions granted, start camera and audio recording
+                startCamera()
+                startAudioRecording()
             } else {
-                Toast.makeText(this, "Camera permission is required", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Permissions are required to run this app", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    private fun setupChart() {
-        // Nastavte základné vlastnosti pre LineChart
-        lineChart.axisRight.isEnabled = false
-        lineChart.axisLeft.axisMinimum = 0f
-        lineChart.axisLeft.axisMaximum = 255f
-        lineChart.xAxis.position = XAxis.XAxisPosition.BOTTOM
-        lineChart.xAxis.setDrawGridLines(false)
-        lineChart.description.isEnabled = false
-        lineChart.legend.isEnabled = false
-    }
 
     private fun startCamera() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
@@ -118,21 +136,15 @@ class MainActivity : AppCompatActivity() {
                                         uPlane.get(uIndex),
                                         vPlane.get(vIndex)
                                     )
-                                    if (y > height/4) {
-                                        if (y < height*3/4) {
-                                            if (x > width/4) {
-                                                if (x<width*3/4) {
-                                                    totalGreenBrightness += green
-                                                    pixelCount++
-                                                }
-                                            }
-                                        }
-                                    }
+
+                                    totalGreenBrightness += green
+                                    pixelCount++
+
                                 }
                             }
 
                             val avgGreenBrightness = totalGreenBrightness / pixelCount
-                            Log.d("PPG", "Average green brightness (whole image): $avgGreenBrightness")
+                            Log.d("PPG", "Average green brightness : $avgGreenBrightness")
                             updateChart(avgGreenBrightness)
                         }
 
@@ -163,11 +175,11 @@ class MainActivity : AppCompatActivity() {
         val vVal = v.toInt() and 0xFF - 128
 
         val r = (yVal + 1.370705 * vVal).toInt()
-        val g = (yVal - 0.337633 * uVal - 0.698001 * vVal).toInt()
-        val b = (yVal + 1.732446 * uVal).toInt()
+        //val g = (yVal - 0.337633 * uVal - 0.698001 * vVal).toInt()
+        //val b = (yVal + 1.732446 * uVal).toInt()
 
         // Orezanie hodnôt na rozsah 0-255
-        return g.coerceIn(0, 255)
+        return r.coerceIn(0, 255)
     }
 
     private fun updateChart(avgBrightness: Float) {
@@ -181,15 +193,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Získajte posledných 40 vzoriek pre dynamické nastavenie osi y
-        val recentEntries = chartEntries.takeLast(80)
+        val recentEntries = chartEntries.takeLast(90)
 
         // Nájdite maximálnu a minimálnu hodnotu medzi poslednými 40 vzorkami
         val maxBrightness = recentEntries.maxOfOrNull { it.y } ?: 255f
         val minBrightness = recentEntries.minOfOrNull { it.y } ?: 0f
 
         // Nastavte novú maximálnu a minimálnu hodnotu pre os y
-        lineChart.axisLeft.axisMaximum = maxBrightness + 1  // Pridajte trochu priestoru nad max hodnotou
-        lineChart.axisLeft.axisMinimum = minBrightness - 1  // Pridajte trochu priestoru pod min hodnotou
+        lineChart.axisLeft.axisMaximum = maxBrightness   // Pridajte trochu priestoru nad max hodnotou
+        lineChart.axisLeft.axisMinimum = minBrightness   // Pridajte trochu priestoru pod min hodnotou
 
         // Nastavte údaje do grafu
         val lineDataSet = LineDataSet(chartEntries, "Brightness")
@@ -200,5 +212,107 @@ class MainActivity : AppCompatActivity() {
         lineChart.data = lineData
         lineChart.notifyDataSetChanged()
         lineChart.invalidate()
+    }
+    private fun startAudioRecording() {
+        val sampleRate = 10000
+        val bufferSize = AudioRecord.getMinBufferSize(
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
+            return
+        }
+        audioRecord = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            sampleRate,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            bufferSize
+        )
+
+        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+            Log.e("PCG", "AudioRecord initialization failed.")
+            return
+        }
+
+        audioRecord.startRecording()
+        val audioBuffer = ShortArray(bufferSize)
+
+        // Aggregate amplitudes for batch updating the chart
+        val amplitudeBatch = mutableListOf<Float>()
+        val batchSize = 50  // Adjust this batch size as needed
+
+        Thread {
+            while (audioRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                val readSize = audioRecord.read(audioBuffer, 0, bufferSize)
+                if (readSize > 0) {
+                    for (i in 0 until readSize) {
+                        val amplitude = audioBuffer[i].toFloat()
+                        amplitudeBatch.add(amplitude)
+
+                        // When batch size is reached, send to the chart
+                        if (amplitudeBatch.size >= batchSize) {
+                            val avgAmplitude = amplitudeBatch.average().toFloat()  // Average of the batch
+                            amplitudeBatch.clear()  // Clear batch after sending
+
+                            // Update the chart on the main thread with batched data
+                            runOnUiThread { updatePcgChart(avgAmplitude) }
+                        }
+                    }
+                }
+            }
+        }.start()
+    }
+    private fun updatePcgChart(amplitude: Float) {
+        pcgEntries.add(Entry(pcgTimeIndex, -amplitude))
+        pcgTimeIndex += 1f
+
+        if (pcgEntries.size > 3000) {
+            pcgEntries.removeAt(0)
+        }
+
+        val lineDataSet = LineDataSet(pcgEntries, "Amplitude")
+        lineDataSet.setDrawValues(false)
+        lineDataSet.setDrawCircles(false)
+
+        val lineData = LineData(lineDataSet)
+        pcgChart.data = lineData
+
+        // Set Y-axis range from 0 to 200
+        pcgChart.axisLeft.axisMinimum = -800f
+        pcgChart.axisLeft.axisMaximum = 800f
+
+        pcgChart.notifyDataSetChanged()
+        pcgChart.invalidate()
+    }
+    private fun checkAndRequestPermissions(): Boolean {
+        val permissionsNeeded = mutableListOf<String>()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.CAMERA)
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsNeeded.add(Manifest.permission.RECORD_AUDIO)
+        }
+
+        if (permissionsNeeded.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, permissionsNeeded.toTypedArray(), REQUEST_CODE_PERMISSIONS)
+            return false
+        }
+
+        return true
     }
 }
