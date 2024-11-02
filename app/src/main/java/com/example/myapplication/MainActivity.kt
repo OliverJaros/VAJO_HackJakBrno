@@ -246,9 +246,9 @@ class MainActivity : AppCompatActivity() {
         val r = (yVal + 1.370705 * vVal).toInt()
         val g = (yVal - 0.337633 * uVal - 0.698001 * vVal).toInt()
         val b = (yVal + 1.732446 * uVal).toInt()
-
+        val tmp=r+g
         // Orezanie hodnôt na rozsah 0-255
-        return g.coerceIn(0, 255)
+        return tmp.coerceIn(0, 255)
     }
 
     private fun updateChart(avgBrightness: Float) {
@@ -305,7 +305,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            MediaRecorder.AudioSource.UNPROCESSED,
             sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -367,9 +367,14 @@ class MainActivity : AppCompatActivity() {
         val lineData = LineData(lineDataSet)
         pcgChart.data = lineData
 
-        // Set Y-axis range from 0 to 200
-        pcgChart.axisLeft.axisMinimum = -800f
-        pcgChart.axisLeft.axisMaximum = 800f
+        val recentPCGEntries = pcgEntries.takeLast(1000)
+
+        // Nájdite maximálnu a minimálnu hodnotu medzi poslednými 40 vzorkami
+        val maxBrightness = recentPCGEntries.maxOfOrNull { it.y } ?: 2000f
+        val minBrightness = recentPCGEntries.minOfOrNull { it.y } ?: -2000f
+
+        pcgChart.axisLeft.axisMinimum = -maxBrightness
+        pcgChart.axisLeft.axisMaximum = maxBrightness
 
         pcgChart.notifyDataSetChanged()
         pcgChart.invalidate()
