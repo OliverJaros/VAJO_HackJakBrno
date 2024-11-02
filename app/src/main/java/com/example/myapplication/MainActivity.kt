@@ -44,6 +44,8 @@ class MainActivity : AppCompatActivity() {
     private var pcgTimeIndex = 0f
     private var isRecording = false
     private var isCameraRunning = false
+
+    private lateinit var audioThread: Thread
     private lateinit var cameraProvider: ProcessCameraProvider
 
 
@@ -57,7 +59,7 @@ class MainActivity : AppCompatActivity() {
         AudioFormat.CHANNEL_IN_MONO,
         AudioFormat.ENCODING_PCM_16BIT
     )
-    private lateinit var audioRecord: AudioRecord
+    private var audioRecord: AudioRecord? = null
     companion object {
         private const val REQUEST_CODE_PERMISSIONS = 10
     }
@@ -197,16 +199,10 @@ class MainActivity : AppCompatActivity() {
                                     uPlane.get(uIndex),
                                     vPlane.get(vIndex)
                                 )
-                                if (y > height/4) {
-                                    if (y < height*3/4) {
-                                        if (x > width/4) {
-                                            if (x<width*3/4) {
-                                                totalGreenBrightness += green
-                                                pixelCount++
-                                            }
-                                        }
-                                    }
-                                }
+
+                                totalGreenBrightness += green
+                                pixelCount++
+
                             }
                         }
 
@@ -316,22 +312,24 @@ class MainActivity : AppCompatActivity() {
             bufferSize
         )
 
-        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e("PCG", "AudioRecord initialization failed.")
-            return
-        }
+//        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+//            Log.e("PCG", "AudioRecord initialization failed.")
+//            return
+//        }
 
-        audioRecord.startRecording()
+//        audioRecord.startRecording()
         val audioBuffer = ShortArray(bufferSize)
 
         // Aggregate amplitudes for batch updating the chart
         val amplitudeBatch = mutableListOf<Float>()
         val batchSize = 50  // Adjust this batch size as needed
 
-        Thread {
-            while (audioRecord.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                val readSize = audioRecord.read(audioBuffer, 0, bufferSize)
-                if (readSize > 0) {
+        audioThread = Thread {
+            audioRecord?.startRecording()
+            while (isCameraRunning) {
+                val readSize: Int? = audioRecord?.read(audioBuffer, 0, bufferSize)
+                if (readSize != null && readSize > 0){
+//                if (readSize?.compareTo(0) ?: 1 > 0) {
                     for (i in 0 until readSize) {
                         val amplitude = audioBuffer[i].toFloat()
                         amplitudeBatch.add(amplitude)
@@ -347,13 +345,18 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-        }.start()
+
+            audioRecord?.stop()
+            audioRecord?.release()
+            audioRecord = null
+        }
+        audioThread.start()
     }
     private fun updatePcgChart(amplitude: Float) {
         pcgEntries.add(Entry(pcgTimeIndex, -amplitude))
         pcgTimeIndex += 1f
 
-        if (pcgEntries.size > 3000) {
+        if (pcgEntries.size > 1000) {
             pcgEntries.removeAt(0)
         }
 
@@ -371,6 +374,7 @@ class MainActivity : AppCompatActivity() {
         pcgChart.notifyDataSetChanged()
         pcgChart.invalidate()
     }
+
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
