@@ -7,6 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import android.widget.ImageButton
@@ -29,6 +30,12 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import java.util.concurrent.Executors
+import java.io.File
+import java.io.FileWriter
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 class MainActivity : AppCompatActivity() {
@@ -43,11 +50,12 @@ class MainActivity : AppCompatActivity() {
     private var timeIndex = 0f
     private var pcgTimeIndex = 0f
     private var isRecording = false
+    private var isCollecting = false
     private var isCameraRunning = false
 
     private lateinit var audioThread: Thread
     private lateinit var cameraProvider: ProcessCameraProvider
-
+    private val brightnessValues = mutableListOf<Float>()
 
     private var preview: Preview? = null
 
@@ -123,15 +131,24 @@ class MainActivity : AppCompatActivity() {
             if (isCameraRunning) {
                 recordButton.setImageResource(R.drawable.ic_play)
                 stopCamera()
+                isCollecting = false
+                Log.d("click", "Camera stopping")
+                processCollectedData(brightnessValues)
             } else {
                 recordButton.setImageResource(R.drawable.ic_stop)
                 startCamera(previewView)
+                Log.d("click", "Camera starting")
+                //startAudioRecording()
+                isCollecting = true
+                brightnessValues.clear()
                 startAudioRecording()
             }
             isCameraRunning = !isCameraRunning
         }
 
     }
+
+
 
 
     // Metóda pre spracovanie výsledkov žiadosti o povolenie
@@ -209,6 +226,7 @@ class MainActivity : AppCompatActivity() {
                         val avgGreenBrightness = totalGreenBrightness / pixelCount
                         //Log.d("PPG", "Average green brightness (whole image): $avgGreenBrightness")
                         updateChart(avgGreenBrightness)
+                        updateBrightness(avgGreenBrightness)
                     }
 
                     image.close()
@@ -216,6 +234,8 @@ class MainActivity : AppCompatActivity() {
             }
 
         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+
 
         try {
             cameraProvider.unbindAll()
@@ -229,7 +249,52 @@ class MainActivity : AppCompatActivity() {
             Log.e("CameraXApp", "Nepodarilo sa zapnúť kameru.", exc)
         }
 
-        Toast.makeText(this, "Camera stopped", Toast.LENGTH_SHORT).show()
+        //Toast.makeText(this, "Camera stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    // Function to update avg_brightness, called whenever a new frame is received
+    private fun updateBrightness(avgGreenBrightness: Float) {
+        if (isCollecting) {
+            brightnessValues.add(avgGreenBrightness)  // Add value if recording
+        }
+    }
+
+
+    //private val documentsDir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+
+     //Optional: Process the collected data after recording
+    private fun processCollectedData(values: List<Float>) {
+         Log.d("Brightness", "Value numero uno")
+        // Handle the list of brightness values (e.g., save to file, display, etc.)
+        values.forEach { value ->
+            Log.d("Brightness", "Value: $value")
+
+            //Log.d("FilePath", "Documents Directory Path: ${documentsDir?.absolutePath}")
+        }
+         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+
+         // Format the filename with the timestamp
+         val fileName = "brightness_values_$timestamp.csv"
+         // Define the file path and file name
+         val csvFile = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
+
+         try {
+             FileWriter(csvFile).use { writer ->
+                 // Write a header for the CSV (optional)
+                 writer.append("Brightness\n")
+
+                 // Write each brightness value on a new line
+                 brightnessValues.forEach { value ->
+                     writer.append("$value\n")
+                 }
+
+                 writer.flush()
+             }
+             Log.d("CSV Export", "File saved at: ${csvFile.absolutePath}")
+         } catch (e: IOException) {
+             e.printStackTrace()
+             Log.e("CSV Export", "Error saving file: ${e.message}")
+         }
     }
 
     private fun stopCamera() {
