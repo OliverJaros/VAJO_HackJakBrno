@@ -23,18 +23,24 @@ import com.github.mikephil.charting.components.XAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var recordButton: ImageButton
+    private lateinit var cameraExecutor: ExecutorService
     private lateinit var previewView: PreviewView
     private lateinit var lineChart: LineChart
     private val chartEntries = ArrayList<Entry>()
     private var timeIndex = 0f
     private var isRecording = false
     private var isCameraRunning = false
-    private val cameraProvider: ProcessCameraProvider? = null
+    private lateinit var cameraProvider: ProcessCameraProvider
+
+
+    private var preview: Preview? = null
 
     private val CAMERA_PERMISSION_CODE = 100 // Konštanta pre identifikáciu žiadosti o povolenie kamery
 
@@ -43,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContentView(R.layout.activity_main)
 
+        cameraExecutor = Executors.newSingleThreadExecutor()
         // Inicializujte PreviewView a LineChart
         recordButton = findViewById(R.id.recordButton)
         previewView = findViewById(R.id.previewView)
@@ -63,12 +70,12 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_CODE)
         }
         recordButton.setOnClickListener {
-            if (isRecording) {
+            if (isCameraRunning) {
                 stopCamera()
             } else {
-                startCamera()
+                startCamera(previewView)
             }
-            isRecording = !isRecording
+            isCameraRunning = !isCameraRunning
         }
 
     }
@@ -78,9 +85,9 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == CAMERA_PERMISSION_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                startCamera() // Spustí kameru po udelení povolenia
-            } else {
+            if (grantResults.isNotEmpty() && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+                //startCamera(previewView) // Spustí kameru po udelení povolenia
+            //} else {
                 Toast.makeText(this, "Camera permission is required", Toast.LENGTH_SHORT).show()
             }
         }
@@ -97,87 +104,92 @@ class MainActivity : AppCompatActivity() {
         lineChart.legend.isEnabled = false
     }
 
-    private fun startCamera() {
-        if (isCameraRunning) return;
+    private fun startCamera(previewView: PreviewView) {
+        Toast.makeText(this, "Camera start", Toast.LENGTH_SHORT).show()
+
+        Log.d("camera", "Camera running: $isCameraRunning")
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener(Runnable {
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+            cameraProvider = cameraProviderFuture.get()
 
-            val preview = Preview.Builder()
-                .build()
-                .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+            bindCamera(previewView)
+        }, ContextCompat.getMainExecutor(this))
+    }
 
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-                .also {
-                    it.setAnalyzer(ContextCompat.getMainExecutor(this), { image ->
-                        if (image.format == ImageFormat.YUV_420_888) {
-                            val yPlane = image.planes[0].buffer
-                            val uPlane = image.planes[1].buffer
-                            val vPlane = image.planes[2].buffer
+    private fun bindCamera(previewView: PreviewView) {
+        preview = Preview.Builder().build().also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
 
-                            val width = image.width
-                            val height = image.height
+        val imageAnalyzer = ImageAnalysis.Builder()
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+            .also {
+                it.setAnalyzer(ContextCompat.getMainExecutor(this), { image ->
+                    if (image.format == ImageFormat.YUV_420_888) {
+                        val yPlane = image.planes[0].buffer
+                        val uPlane = image.planes[1].buffer
+                        val vPlane = image.planes[2].buffer
 
-                            var totalGreenBrightness = 0f
-                            var pixelCount = 0
+                        val width = image.width
+                        val height = image.height
 
-                            // Prechádzame cez každý pixel na obrázku
-                            for (y in height / 4 until height * 3 / 4) {
-                                for (x in width / 4 until width * 3 / 4) {
-                                    val yIndex = y * width + x
-                                    val uIndex = (y / 2) * (width / 2) + (x / 2)
-                                    val vIndex = uIndex
+                        var totalGreenBrightness = 0f
+                        var pixelCount = 0
 
-                                    val green = extractGreenFromYUV(
-                                        yPlane.get(yIndex),
-                                        uPlane.get(uIndex),
-                                        vPlane.get(vIndex)
-                                    )
-                                    if (y > height/4) {
-                                        if (y < height*3/4) {
-                                            if (x > width/4) {
-                                                if (x<width*3/4) {
-                                                    totalGreenBrightness += green
-                                                    pixelCount++
-                                                }
+                        // Prechádzame cez každý pixel na obrázku
+                        for (y in height / 4 until height * 3 / 4) {
+                            for (x in width / 4 until width * 3 / 4) {
+                                val yIndex = y * width + x
+                                val uIndex = (y / 2) * (width / 2) + (x / 2)
+                                val vIndex = uIndex
+
+                                val green = extractGreenFromYUV(
+                                    yPlane.get(yIndex),
+                                    uPlane.get(uIndex),
+                                    vPlane.get(vIndex)
+                                )
+                                if (y > height/4) {
+                                    if (y < height*3/4) {
+                                        if (x > width/4) {
+                                            if (x<width*3/4) {
+                                                totalGreenBrightness += green
+                                                pixelCount++
                                             }
                                         }
                                     }
                                 }
                             }
-
-                            val avgGreenBrightness = totalGreenBrightness / pixelCount
-                            Log.d("PPG", "Average green brightness (whole image): $avgGreenBrightness")
-                            updateChart(avgGreenBrightness)
                         }
 
-                        image.close()
-                    })
-                }
+                        val avgGreenBrightness = totalGreenBrightness / pixelCount
+                        //Log.d("PPG", "Average green brightness (whole image): $avgGreenBrightness")
+                        updateChart(avgGreenBrightness)
+                    }
 
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-            try {
-                cameraProvider.unbindAll()
-                val camera = cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, imageAnalyzer
-                )
-
-                camera.cameraControl.enableTorch(true)
-
-            } catch (exc: Exception) {
-                Log.e("CameraXApp", "Nepodarilo sa zapnúť kameru.", exc)
+                    image.close()
+                })
             }
 
-            isCameraRunning = true
-        }, ContextCompat.getMainExecutor(this))
+        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+        try {
+            cameraProvider.unbindAll()
+            val camera = cameraProvider.bindToLifecycle(
+                this, cameraSelector, preview, imageAnalyzer
+            )
+            val cameraControl = camera?.cameraControl
+            cameraControl?.enableTorch(true)
+
+        } catch (exc: Exception) {
+            Log.e("CameraXApp", "Nepodarilo sa zapnúť kameru.", exc)
+        }
+
+        Toast.makeText(this, "Camera stopped", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopCamera() {
-        cameraProvider?.unbindAll() // Unbind all use cases to stop the camera
-        isCameraRunning = false
+        cameraProvider.unbindAll() // Unbind all use cases to stop the camera
         Toast.makeText(this, "Camera stopped", Toast.LENGTH_SHORT).show()
     }
 
@@ -225,5 +237,10 @@ class MainActivity : AppCompatActivity() {
         lineChart.data = lineData
         lineChart.notifyDataSetChanged()
         lineChart.invalidate()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
     }
 }
