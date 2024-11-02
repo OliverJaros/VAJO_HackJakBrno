@@ -97,15 +97,26 @@ class MainActivity : AppCompatActivity() {
         }
         recordButton = findViewById(R.id.recordButton)
         // Skontrolujte, či má aplikácia povolenie pre kameru
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+//            // Ak povolenie nie je udelené, požiadajte o povolenie pre kameru
+//            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_CODE)
+//            }
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+//            // Ak povolenie nie je udelené, požiadajte o povolenie pre kameru
+//            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_CODE)
+//        }
+        val permissionsNeeded = mutableListOf<String>()
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            // Ak povolenie nie je udelené, požiadajte o povolenie pre kameru
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_CODE)
-            }
+            permissionsNeeded.add(Manifest.permission.CAMERA)
+        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            // Ak povolenie nie je udelené, požiadajte o povolenie pre kameru
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.RECORD_AUDIO), AUDIO_PERMISSION_CODE)
+            permissionsNeeded.add(Manifest.permission.RECORD_AUDIO)
         }
 
+        if (permissionsNeeded.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, permissionsNeeded.toTypedArray(), REQUEST_CODE_PERMISSIONS)
+        }
         recordButton.setOnClickListener {
             if (isCameraRunning) {
                 recordButton.setImageResource(R.drawable.ic_play)
@@ -113,7 +124,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 recordButton.setImageResource(R.drawable.ic_stop)
                 startCamera(previewView)
-                //startAudioRecording()
+                startAudioRecording()
             }
             isCameraRunning = !isCameraRunning
         }
@@ -124,20 +135,20 @@ class MainActivity : AppCompatActivity() {
     // Metóda pre spracovanie výsledkov žiadosti o povolenie
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == CAMERA_PERMISSION_CODE) {
+        if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (grantResults.isNotEmpty() && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
                 //startCamera(previewView) // Spustí kameru po udelení povolenia
             //} else {
                 Toast.makeText(this, "Camera permission is required", Toast.LENGTH_SHORT).show()
             }
         }
-        if (requestCode == AUDIO_PERMISSION_CODE) {
-            if (grantResults.isNotEmpty() && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
-                //startCamera(previewView) // Spustí kameru po udelení povolenia
-                //} else {
-                Toast.makeText(this, "Microphone permission is required", Toast.LENGTH_SHORT).show()
-            }
-        }
+//        if (requestCode == AUDIO_PERMISSION_CODE) {
+//            if (grantResults.isNotEmpty() && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
+//                //startCamera(previewView) // Spustí kameru po udelení povolenia
+//                //} else {
+//                Toast.makeText(this, "Microphone permission is required", Toast.LENGTH_SHORT).show()
+//            }
+//        }
     }
 
 
