@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var audioThread: Thread
     private lateinit var cameraProvider: ProcessCameraProvider
     private val brightnessValues = mutableListOf<Float>()
+    private val timestamps = mutableListOf<Long>()
 
     private var preview: Preview? = null
 
@@ -256,6 +257,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateBrightness(avgGreenBrightness: Float) {
         if (isCollecting) {
             brightnessValues.add(avgGreenBrightness)  // Add value if recording
+            timestamps.add(System.currentTimeMillis())
         }
     }
 
@@ -281,13 +283,19 @@ class MainActivity : AppCompatActivity() {
          try {
              FileWriter(csvFile).use { writer ->
                  // Write a header for the CSV (optional)
-                 writer.append("Brightness\n")
+                 writer.append("Timestamp,Brightness\n")
 
                  // Write each brightness value on a new line
-                 brightnessValues.forEach { value ->
-                     writer.append("$value\n")
-                 }
+                 if (brightnessValues.size == timestamps.size) {
+                     // Write each brightness value and corresponding timestamp in a new line
+                     brightnessValues.forEachIndexed { index, brightnessValue ->
+                         // Format the timestamp to a readable date-time string
+                         val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(timestamps[index]))
 
+                         // Write the brightness and timestamp as comma-separated values
+                         writer.append("$timestamp,$brightnessValue\n")
+                     }
+                 }
                  writer.flush()
              }
              Log.d("CSV Export", "File saved at: ${csvFile.absolutePath}")
