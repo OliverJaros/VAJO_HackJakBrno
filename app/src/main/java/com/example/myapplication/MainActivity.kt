@@ -41,6 +41,7 @@ import java.util.Locale
 class MainActivity : AppCompatActivity() {
 
     private lateinit var recordButton: ImageButton
+    private lateinit var saveButton: ImageButton
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var previewView: PreviewView
     private lateinit var lineChart: LineChart
@@ -94,9 +95,11 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor = Executors.newSingleThreadExecutor()
         // Inicializujte PreviewView a LineChart
         recordButton = findViewById(R.id.recordButton)
+        saveButton = findViewById(R.id.saveButton)
         previewView = findViewById(R.id.previewView)
         lineChart = findViewById(R.id.lineChart)
         pcgChart = findViewById(R.id.pcgChart)
+
 
         setupChart(lineChart)
         setupChart(pcgChart)
@@ -109,6 +112,7 @@ class MainActivity : AppCompatActivity() {
             insets
         }
         recordButton = findViewById(R.id.recordButton)
+        saveButton = findViewById(R.id.saveButton)
         // Skontrolujte, či má aplikácia povolenie pre kameru
 //        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
 //            // Ak povolenie nie je udelené, požiadajte o povolenie pre kameru
@@ -134,19 +138,30 @@ class MainActivity : AppCompatActivity() {
             if (isCameraRunning) {
                 recordButton.setImageResource(R.drawable.ic_play)
                 stopCamera()
-                isCollecting = false
                 Log.d("click", "Camera stopping")
-                processCollectedData(brightnessValues)
             } else {
                 recordButton.setImageResource(R.drawable.ic_stop)
                 startCamera(previewView)
                 Log.d("click", "Camera starting")
                 //startAudioRecording()
-                isCollecting = true
-                brightnessValues.clear()
                 startAudioRecording()
             }
             isCameraRunning = !isCameraRunning
+        }
+        saveButton.setOnClickListener {
+            if (isCameraRunning) {
+                if (isCollecting){
+                    saveButton.setImageResource(R.drawable.ic_play)
+                    Log.d("click", "Camera stopping")
+                    processCollectedData(brightnessValues)
+                } else {
+                    saveButton.setImageResource(R.drawable.ic_stop)
+                    brightnessValues.clear()
+                    amplitudeValues.clear()
+                }
+                isCollecting = !isCollecting
+            }
+
         }
 
     }
@@ -448,7 +463,7 @@ class MainActivity : AppCompatActivity() {
                             amplitudeBatch.clear()  // Clear batch after sending
 
                             // Update the chart on the main thread with batched data
-                            runOnUiThread { updatePcgChart(avgAmplitude);updateSound(avgAmplitude)}
+                            runOnUiThread { updatePcgChart(avgAmplitude); updateSound(avgAmplitude)}
                             //runOnUiThread { updateSound(avgAmplitude)}
                         }
                     }
