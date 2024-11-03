@@ -56,6 +56,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var audioThread: Thread
     private lateinit var cameraProvider: ProcessCameraProvider
     private val brightnessValues = mutableListOf<Float>()
+    private val amplitudeValues = mutableListOf<Float>()
+    private val timestampsAmplitude = mutableListOf<Long>()
     private val timestamps = mutableListOf<Long>()
 
     private var preview: Preview? = null
@@ -260,7 +262,12 @@ class MainActivity : AppCompatActivity() {
             timestamps.add(System.currentTimeMillis())
         }
     }
-
+    private fun updateSound(avgAmplitude: Float) {
+        if (isCollecting) {
+            amplitudeValues.add(avgAmplitude)  // Add value if recording
+            timestampsAmplitude.add(System.currentTimeMillis())
+        }
+    }
 
     //private val documentsDir = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
 
@@ -277,6 +284,7 @@ class MainActivity : AppCompatActivity() {
 
          // Format the filename with the timestamp
          val fileName = "brightness_values_$timestamp.csv"
+         val fileName2 = "amplitude_values_$timestamp.csv"
          // Define the file path and file name
          val csvFile = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName)
 
@@ -303,6 +311,33 @@ class MainActivity : AppCompatActivity() {
              e.printStackTrace()
              Log.e("CSV Export", "Error saving file: ${e.message}")
          }
+
+         val csvFile2 = File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), fileName2)
+
+         try {
+             FileWriter(csvFile2).use { writer ->
+                 // Write a header for the CSV (optional)
+                 writer.append("Timestamp,Amplitudes\n")
+
+                 // Write each brightness value on a new line
+                 if (amplitudeValues.size == timestampsAmplitude.size) {
+                     // Write each brightness value and corresponding timestamp in a new line
+                     amplitudeValues.forEachIndexed { index, amplitudeValues ->
+                         // Format the timestamp to a readable date-time string
+                         val timestampAmplitude = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date(timestampsAmplitude[index]))
+
+                         // Write the brightness and timestamp as comma-separated values
+                         writer.append("$timestampAmplitude,$amplitudeValues\n")
+                     }
+                 }
+                 writer.flush()
+             }
+             Log.d("CSV Export", "File saved at: ${csvFile2.absolutePath}")
+         } catch (e: IOException) {
+             e.printStackTrace()
+             Log.e("CSV Export", "Error saving file: ${e.message}")
+         }
+
     }
 
     private fun stopCamera() {
@@ -413,7 +448,8 @@ class MainActivity : AppCompatActivity() {
                             amplitudeBatch.clear()  // Clear batch after sending
 
                             // Update the chart on the main thread with batched data
-                            runOnUiThread { updatePcgChart(avgAmplitude) }
+                            runOnUiThread { updatePcgChart(avgAmplitude);updateSound(avgAmplitude)}
+                            //runOnUiThread { updateSound(avgAmplitude)}
                         }
                     }
                 }
